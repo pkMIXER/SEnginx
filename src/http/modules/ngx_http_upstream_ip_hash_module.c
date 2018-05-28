@@ -109,9 +109,6 @@ ngx_http_upstream_init_ip_hash_peer(ngx_http_request_t *r,
     }
 
     r->upstream->peer.data = &iphp->rrp;
-#if (NGX_DYNAMIC_RESOLVE)
-    iphp->rrp.dyn_peers = NULL;
-#endif
 
     if (ngx_http_upstream_init_round_robin_peer(r, us) != NGX_OK) {
         return NGX_ERROR;
@@ -208,20 +205,14 @@ ngx_http_upstream_get_ip_hash_peer(ngx_peer_connection_t *pc, void *data)
             goto next;
         }
 
-#if (NGX_HTTP_UPSTREAM_CHECK)
-        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, pc->log, 0,
-                       "get ip_hash peer, check_index: %ui",
-                       peer->check_index);
-
-        if (ngx_http_upstream_check_peer_down(peer->check_index)) {
-            goto next;
-        }
-#endif
-
         if (peer->max_fails
             && peer->fails >= peer->max_fails
             && now - peer->checked <= peer->fail_timeout)
         {
+            goto next;
+        }
+
+        if (peer->max_conns && peer->conns >= peer->max_conns) {
             goto next;
         }
 
@@ -240,11 +231,6 @@ ngx_http_upstream_get_ip_hash_peer(ngx_peer_connection_t *pc, void *data)
     pc->sockaddr = peer->sockaddr;
     pc->socklen = peer->socklen;
     pc->name = &peer->name;
-#if (NGX_DYNAMIC_RESOLVE)
-    pc->host = &peer->host;
-    pc->dyn_resolve = peer->dyn_resolve;
-#endif
-
 
     peer->conns++;
 
@@ -277,6 +263,7 @@ ngx_http_upstream_ip_hash(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     uscf->flags = NGX_HTTP_UPSTREAM_CREATE
                   |NGX_HTTP_UPSTREAM_WEIGHT
+                  |NGX_HTTP_UPSTREAM_MAX_CONNS
                   |NGX_HTTP_UPSTREAM_MAX_FAILS
                   |NGX_HTTP_UPSTREAM_FAIL_TIMEOUT
                   |NGX_HTTP_UPSTREAM_DOWN;

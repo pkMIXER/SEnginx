@@ -22,17 +22,12 @@ struct ngx_http_upstream_rr_peer_s {
     ngx_str_t                       name;
     ngx_str_t                       server;
 
-#if (NGX_DYNAMIC_RESOLVE)
-    ngx_str_t                       host;
-    ngx_uint_t                      color;
-    ngx_uint_t                      dyn_resolve;
-#endif
-
     ngx_int_t                       current_weight;
     ngx_int_t                       effective_weight;
     ngx_int_t                       weight;
 
     ngx_uint_t                      conns;
+    ngx_uint_t                      max_conns;
 
     ngx_uint_t                      fails;
     time_t                          accessed;
@@ -40,23 +35,24 @@ struct ngx_http_upstream_rr_peer_s {
 
     ngx_uint_t                      max_fails;
     time_t                          fail_timeout;
+    ngx_msec_t                      slow_start;
+    ngx_msec_t                      start_time;
 
-#if (NGX_HTTP_UPSTREAM_CHECK)
-    ngx_uint_t                      check_index;
-#endif
+    ngx_uint_t                      down;
 
-    ngx_uint_t                      down;          /* unsigned  down:1; */
-
-#if (NGX_HTTP_SSL)
+#if (NGX_HTTP_SSL || NGX_COMPAT)
     void                           *ssl_session;
     int                             ssl_session_len;
 #endif
 
-    ngx_http_upstream_rr_peer_t    *next;
-
 #if (NGX_HTTP_UPSTREAM_ZONE)
     ngx_atomic_t                    lock;
 #endif
+
+    ngx_http_upstream_rr_peer_t    *next;
+
+    NGX_COMPAT_BEGIN(32)
+    NGX_COMPAT_END
 };
 
 
@@ -79,11 +75,6 @@ struct ngx_http_upstream_rr_peers_s {
     ngx_str_t                      *name;
 
     ngx_http_upstream_rr_peers_t   *next;
-
-#if (NGX_DYNAMIC_RESOLVE)
-    ngx_int_t                       ref;
-    ngx_int_t                       stale;
-#endif
 
     ngx_http_upstream_rr_peer_t    *peer;
 };
@@ -134,19 +125,11 @@ struct ngx_http_upstream_rr_peers_s {
 
 
 typedef struct {
+    ngx_uint_t                      config;
     ngx_http_upstream_rr_peers_t   *peers;
     ngx_http_upstream_rr_peer_t    *current;
     uintptr_t                      *tried;
     uintptr_t                       data;
-
-#if (NGX_DYNAMIC_RESOLVE)
-    ngx_http_upstream_rr_peers_t   *dyn_peers;
-#endif
-
-#if (NGX_HTTP_PERSISTENCE)
-    void                           *request;
-    void                           *group;
-#endif
 } ngx_http_upstream_rr_peer_data_t;
 
 

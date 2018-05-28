@@ -8,9 +8,6 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
-#if (NGX_HTTP_PERSISTENCE)
-#include <ngx_http_upstream_persistence.h>
-#endif
 
 
 static ngx_int_t ngx_http_upstream_init_least_conn_peer(ngx_http_request_t *r,
@@ -65,20 +62,6 @@ ngx_module_t  ngx_http_upstream_least_conn_module = {
 };
 
 
-#if (NGX_DYNAMIC_RESOLVE)
-static ngx_int_t
-ngx_http_upstream_reinit_least_conn(ngx_http_request_t *r, ngx_pool_t *pool,
-    ngx_http_upstream_srv_conf_t *us, void *data)
-{
-    if (us->peer.init(r, us) != NGX_OK) {
-        return NGX_ERROR;
-    }
-
-    return NGX_OK;
-}
-#endif
-
-
 static ngx_int_t
 ngx_http_upstream_init_least_conn(ngx_conf_t *cf,
     ngx_http_upstream_srv_conf_t *us)
@@ -91,9 +74,6 @@ ngx_http_upstream_init_least_conn(ngx_conf_t *cf,
     }
 
     us->peer.init = ngx_http_upstream_init_least_conn_peer;
-#if (NGX_DYNAMIC_RESOLVE)
-    us->peer.reinit_upstream = ngx_http_upstream_reinit_least_conn;
-#endif
 
     return NGX_OK;
 }
@@ -127,9 +107,6 @@ ngx_http_upstream_get_least_conn_peer(ngx_peer_connection_t *pc, void *data)
     ngx_uint_t                     i, n, p, many;
     ngx_http_upstream_rr_peer_t   *peer, *best;
     ngx_http_upstream_rr_peers_t  *peers;
-#if (NGX_HTTP_PERSISTENCE)
-    ngx_int_t                      persist_index;
-#endif
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, pc->log, 0,
                    "get least conn peer, try: %ui", pc->tries);
@@ -155,77 +132,32 @@ ngx_http_upstream_get_least_conn_peer(ngx_peer_connection_t *pc, void *data)
     p = 0;
 #endif
 
-#if (NGX_HTTP_PERSISTENCE)
-    persist_index = ngx_http_upstream_ps_get(rrp->request,
-                                             rrp->peers->number,
-                                             rrp->group);
-#endif
-
     for (peer = peers->peer, i = 0;
          peer;
          peer = peer->next, i++)
     {
-#if (NGX_HTTP_PERSISTENCE)
-        if(persist_index >= 0 && i != (ngx_uint_t)persist_index) {
-            continue;
-        }
-#endif
-
         n = i / (8 * sizeof(uintptr_t));
         m = (uintptr_t) 1 << i % (8 * sizeof(uintptr_t));
 
         if (rrp->tried[n] & m) {
-#if (NGX_HTTP_PERSISTENCE)
-            if (persist_index >= 0) {
-                persist_index = -1;
-                peer = rrp->peers->peer;
-            }
-#endif
             continue;
         }
 
         if (peer->down) {
-#if (NGX_HTTP_PERSISTENCE)
-            if (persist_index >= 0) {
-                persist_index = -1;
-                peer = rrp->peers->peer;
-                i = 0;
-            }
-#endif
             continue;
         }
-
-#if (NGX_HTTP_UPSTREAM_CHECK)
-        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, pc->log, 0,
-                       "get least_conn peer, check_index: %ui",
-                       peer->check_index);
-
-        if (ngx_http_upstream_check_peer_down(peer->check_index)) {
-            continue;
-        }
-#endif
 
         if (peer->max_fails
             && peer->fails >= peer->max_fails
             && now - peer->checked <= peer->fail_timeout)
         {
-#if (NGX_HTTP_PERSISTENCE)
-            if (persist_index >= 0) {
-                persist_index = -1;
-                peer = rrp->peers->peer;
-                i = 0;
-            }
-#endif
             continue;
         }
 
-#if (NGX_HTTP_PERSISTENCE)
-        if(persist_index >= 0) {
-            best = peer;
-            p = persist_index;
-            break;
+        if (peer->max_conns && peer->conns >= peer->max_conns) {
+            continue;
         }
-#endif
+
         /*
          * select peer with least number of connections; if there are
          * multiple peers with the same number of connections, select
@@ -270,16 +202,6 @@ ngx_http_upstream_get_least_conn_peer(ngx_peer_connection_t *pc, void *data)
                 continue;
             }
 
-#if (NGX_HTTP_UPSTREAM_CHECK)
-            ngx_log_debug1(NGX_LOG_DEBUG_HTTP, pc->log, 0,
-                           "get least_conn peer, check_index: %ui",
-                           peer->check_index);
-
-            if (ngx_http_upstream_check_peer_down(peer->check_index)) {
-                continue;
-            }
-#endif
-
             if (peer->conns * best->weight != best->conns * peer->weight) {
                 continue;
             }
@@ -288,6 +210,10 @@ ngx_http_upstream_get_least_conn_peer(ngx_peer_connection_t *pc, void *data)
                 && peer->fails >= peer->max_fails
                 && now - peer->checked <= peer->fail_timeout)
             {
+                continue;
+            }
+
+            if (peer->max_conns && peer->conns >= peer->max_conns) {
                 continue;
             }
 
@@ -314,10 +240,6 @@ ngx_http_upstream_get_least_conn_peer(ngx_peer_connection_t *pc, void *data)
     pc->sockaddr = best->sockaddr;
     pc->socklen = best->socklen;
     pc->name = &best->name;
-#if (NGX_DYNAMIC_RESOLVE)
-    pc->host = &best->host;
-    pc->dyn_resolve = best->dyn_resolve;
-#endif
 
     best->conns++;
 
@@ -329,11 +251,6 @@ ngx_http_upstream_get_least_conn_peer(ngx_peer_connection_t *pc, void *data)
     rrp->tried[n] |= m;
 
     ngx_http_upstream_rr_peers_unlock(peers);
-
-#if (NGX_HTTP_PERSISTENCE)
-    ngx_http_upstream_ps_set(rrp->request, p,
-            rrp->group);
-#endif
 
     return NGX_OK;
 
@@ -363,12 +280,6 @@ failed:
         ngx_http_upstream_rr_peers_wlock(peers);
     }
 
-    /* all peers failed, mark them as live for quick recovery */
-
-    for (peer = peers->peer; peer; peer = peer->next) {
-        peer->fails = 0;
-    }
-
     ngx_http_upstream_rr_peers_unlock(peers);
 
     pc->name = peers->name;
@@ -393,6 +304,7 @@ ngx_http_upstream_least_conn(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     uscf->flags = NGX_HTTP_UPSTREAM_CREATE
                   |NGX_HTTP_UPSTREAM_WEIGHT
+                  |NGX_HTTP_UPSTREAM_MAX_CONNS
                   |NGX_HTTP_UPSTREAM_MAX_FAILS
                   |NGX_HTTP_UPSTREAM_FAIL_TIMEOUT
                   |NGX_HTTP_UPSTREAM_DOWN

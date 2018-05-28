@@ -29,16 +29,12 @@ typedef struct {
     ngx_connection_t                  *connection;
 
     socklen_t                          socklen;
-    u_char                             sockaddr[NGX_SOCKADDRLEN];
+    ngx_sockaddr_t                     sockaddr;
 
 } ngx_http_upstream_keepalive_cache_t;
 
 
 typedef struct {
-#if (NGX_DYNAMIC_RESOLVE)
-    ngx_http_upstream_rr_peer_data_t   rrp;
-#endif
-
     ngx_http_upstream_keepalive_srv_conf_t  *conf;
 
     ngx_http_upstream_t               *upstream;
@@ -192,9 +188,6 @@ ngx_http_upstream_init_keepalive_peer(ngx_http_request_t *r,
     kp->data = r->upstream->peer.data;
     kp->original_get_peer = r->upstream->peer.get;
     kp->original_free_peer = r->upstream->peer.free;
-#if (NGX_DYNAMIC_RESOLVE)
-    kp->rrp = *(ngx_http_upstream_rr_peer_data_t *)r->upstream->peer.data;
-#endif
 
     r->upstream->peer.data = kp;
     r->upstream->peer.get = ngx_http_upstream_get_keepalive_peer;
@@ -347,6 +340,7 @@ ngx_http_upstream_free_keepalive_peer(ngx_peer_connection_t *pc, void *data,
     pc->connection = NULL;
 
     if (c->read->timer_set) {
+        c->read->delayed = 0;
         ngx_del_timer(c->read);
     }
     if (c->write->timer_set) {

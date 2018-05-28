@@ -27,7 +27,6 @@ typedef struct {
 
     ngx_http_upstream_fastest_access_t *conns;
     ngx_uint_t                         accessed_msec;
-    ngx_uint_t                         current;
 
     ngx_event_get_peer_pt              get_rr_peer;
     ngx_event_free_peer_pt             free_rr_peer;
@@ -326,8 +325,7 @@ ngx_http_upstream_get_fastest_peer(ngx_peer_connection_t *pc, void *data)
     pc->host = &best->host;
     pc->dyn_resolve = best->dyn_resolve;
 
-    fp->rrp.current = best;
-    fp->current = p;
+    fp->rrp.current = p;
 
     n = p / (8 * sizeof(uintptr_t));
     m = (uintptr_t) 1 << p % (8 * sizeof(uintptr_t));
@@ -341,7 +339,7 @@ ngx_http_upstream_get_fastest_peer(ngx_peer_connection_t *pc, void *data)
     fp->accessed_msec = ngx_current_msec;
 
 #if (NGX_HTTP_PERSISTENCE)
-    ngx_http_upstream_ps_set(fp->rrp.request, p,
+    ngx_http_upstream_ps_set(fp->rrp.request, fp->rrp.current,
             fp->rrp.group);
 #endif
     return NGX_OK;
@@ -404,7 +402,7 @@ ngx_http_upstream_free_fastest_peer(ngx_peer_connection_t *pc,
     }
 
     elapsed = ngx_current_msec - fp->accessed_msec;
-    peer = &fp->conns[fp->current];
+    peer = &fp->conns[fp->rrp.current];
 
     if (elapsed == 0) {
         elapsed = 1;

@@ -8,9 +8,6 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
-#if (NGX_HTTP_STATUS_PAGE)
-#include <ngx_http_status_page.h>
-#endif
 
 
 static ngx_int_t ngx_http_write_filter_init(ngx_conf_t *cf);
@@ -68,19 +65,6 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
     sync = 0;
     last = 0;
     ll = &r->out;
-
-#if (NGX_HTTP_STATUS_PAGE)
-    if (ngx_http_status_page_test_old_header(r)) {
-        for (cl = r->out; cl; /* void */) {
-            ln = cl;
-            cl = cl->next;
-            ngx_free_chain(r->pool, ln);
-        }
-
-        r->out = NULL;
-        ngx_http_status_page_clr_old_header(r);
-    }
-#endif
 
     /* find the size, the flush point and the last link of the saved chain */
 
